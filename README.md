@@ -17,8 +17,9 @@ For example, you might choose to have your file be called something like `riskla
 
 The file should have the following keys:
 
-* `public_key`: A hex-encoded X25519 public key (64 characters) used to encrypt your relayer
-  configuration.
+* `public_key`: A hex-encoded Ed25519 public key (64 characters) used to authenticate requests from
+  your relayer. You will sign configuration updates with the corresponding private key to prove
+  ownership.
 * `exclusivity_address`: This is the default address that exclusivity is assigned to on EVM chains.
 * `exclusivity_addresses`: This allows you to override the address that is assigned exclusivity both
   on EVM chains and allows you to give a non-EVM address.
@@ -31,8 +32,8 @@ The file should have the following keys:
   "public_key": "c3e1d9fd756ee7bd8c50d416c1f4aec8d47f49b88ede147769f90dad45de0d68",
   "exclusivity_address": "0x07aE8551Be970cB1cCa11Dd7a11F47Ae82e70E67",
   "exclusivity_addresses": {
-    999: "0xfc0a7211882391717cEdF446889Af99Ca4168093",
-    34268394551451: "FmMK62wrtWVb5SVoTZftSCGw3nEDA79hDbZNTRnC1R6t"
+    "999": "0xfc0a7211882391717cEdF446889Af99Ca4168093",
+    "34268394551451": "FmMK62wrtWVb5SVoTZftSCGw3nEDA79hDbZNTRnC1R6t"
   },
   "active": true
 }
@@ -40,12 +41,12 @@ The file should have the following keys:
 
 ### Generating a public key
 
-Your X25519 keypair consists of a private key (keep this secret!) and a public key (submit this in
-your registration).
+Your Ed25519 keypair consists of a private key (keep this secret!) and a public key (submit this in
+your registration). Ed25519 is a digital signature algorithm—you will use your private key to sign
+requests, and the server will verify the signature using your registered public key.
 
-> **⚠️ Important**: Store your private key securely. You will need it to encrypt configuration data
-  that you send to the configuration endpoint. _Never share your private key or commit it to
-  version control._
+> **⚠️ Important**: Store your private key securely. You will need it to sign configuration updates
+  sent to the configuration endpoint. _Never share your private key or commit it to version control._
 
 Below are examples for generating a keypair in various languages and via command line.
 
@@ -55,11 +56,10 @@ Generate a keypair and extract the public key in hex format:
 
 ```bash
 # Generate a private key
-openssl genpkey -algorithm X25519 -out private_key.pem
+openssl genpkey -algorithm Ed25519 -out private_key.pem
 
 # Extract the raw private key (32 bytes) as hex
 openssl pkey -in private_key.pem -text -noout 2>/dev/null | grep -A 2 "priv:" | tail -n 2 | tr -d ' \n:'
-echo  # newline
 
 # Extract the raw public key (32 bytes) as hex
 openssl pkey -in private_key.pem -pubout -outform DER | tail -c 32 | xxd -p -c 32
@@ -68,7 +68,7 @@ openssl pkey -in private_key.pem -pubout -outform DER | tail -c 32 | xxd -p -c 3
 Or as a one-liner that outputs both keys:
 
 ```bash
-openssl genpkey -algorithm X25519 -out private_key.pem && \
+openssl genpkey -algorithm Ed25519 -out private_key.pem && \
 echo "Private Key: $(openssl pkey -in private_key.pem -text -noout 2>/dev/null | grep -A 2 'priv:' | tail -n 2 | tr -d ' \n:')" && \
 echo "Public Key: $(openssl pkey -in private_key.pem -pubout -outform DER | tail -c 32 | xxd -p -c 32)"
 ```
@@ -84,12 +84,13 @@ npm install tweetnacl
 ```typescript
 import nacl from 'tweetnacl';
 
-// Generate a new X25519 keypair
-const keypair = nacl.box.keyPair();
+// Generate a new Ed25519 signing keypair
+const keypair = nacl.sign.keyPair();
 
 // Convert to hex strings
+// Note: secretKey is 64 bytes (32-byte seed + 32-byte public key), we only need the first 32 bytes
 const publicKeyHex = Buffer.from(keypair.publicKey).toString('hex');
-const privateKeyHex = Buffer.from(keypair.secretKey).toString('hex');
+const privateKeyHex = Buffer.from(keypair.secretKey.slice(0, 32)).toString('hex');
 
 console.log('Public Key (submit this):', publicKeyHex);
 console.log('Private Key (keep secret!):', privateKeyHex);
@@ -104,15 +105,15 @@ pip install pynacl
 ```
 
 ```python
-from nacl.public import PrivateKey
+from nacl.signing import SigningKey
 
-# Generate a new X25519 keypair
-private_key = PrivateKey.generate()
-public_key = private_key.public_key
+# Generate a new Ed25519 signing keypair
+signing_key = SigningKey.generate()
+verify_key = signing_key.verify_key
 
 # Convert to hex strings
-public_key_hex = public_key.encode().hex()
-private_key_hex = private_key.encode().hex()
+public_key_hex = verify_key.encode().hex()
+private_key_hex = signing_key.encode().hex()
 
 print(f"Public Key (submit this): {public_key_hex}")
 print(f"Private Key (keep secret!): {private_key_hex}")
@@ -124,23 +125,23 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-x25519-dalek = "2"
+ed25519-dalek = "2"
 rand = "0.8"
 hex = "0.4"
 ```
 
 ```rust
-use x25519_dalek::{StaticSecret, PublicKey};
+use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 
 fn main() {
-    // Generate a new X25519 keypair
-    let private_key = StaticSecret::random_from_rng(OsRng);
-    let public_key = PublicKey::from(&private_key);
+    // Generate a new Ed25519 signing keypair
+    let signing_key = SigningKey::generate(&mut OsRng);
+    let verifying_key = signing_key.verifying_key();
 
     // Convert to hex strings
-    let public_key_hex = hex::encode(public_key.as_bytes());
-    let private_key_hex = hex::encode(private_key.as_bytes());
+    let public_key_hex = hex::encode(verifying_key.as_bytes());
+    let private_key_hex = hex::encode(signing_key.to_bytes());
 
     println!("Public Key (submit this): {}", public_key_hex);
     println!("Private Key (keep secret!): {}", private_key_hex);
