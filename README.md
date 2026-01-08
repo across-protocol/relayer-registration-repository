@@ -10,10 +10,13 @@ of Risk Labs.
 
 ## Submitting a configuration
 
-In order to submit a configuration you should create a file titled with `<identifier>.json` where
+### Step 1: Create your registration file
+
+Create a file titled `<identifier>.json` in the `relayer_registration/` directory, where
 `<identifier>` is some string that you would like to be associated with your relayer.
 
-For example, you might choose to have your file be called something like `risklabs.json`.
+For example, you might choose to have your file be called something like `risklabs.json` and place
+it at `relayer_registration/risklabs.json`.
 
 The file should have the following keys:
 
@@ -25,7 +28,7 @@ The file should have the following keys:
   on EVM chains and allows you to give a non-EVM address.
 * `active`: This is a boolean that simply denotes whether or not your relayer is currently active.
 
-### Example file
+Here is an example of what the file should look like
 
 ```json
 {
@@ -39,7 +42,40 @@ The file should have the following keys:
 }
 ```
 
-### Generating a public key
+### Step 2: Submit your registration via Pull Request
+
+Once you've created your registration file:
+
+1. **Fork this repository** to your GitHub account
+2. **Create a new branch** for your registration (e.g., `add-risklabs-relayer`)
+3. **Add your file** to the `relayer_registration/` directory
+4. **Commit your changes** with a clear message (e.g., "Add RiskLabs relayer registration")
+5. **Create a Pull Request** to the main branch of this repository
+
+Your PR will be automatically validated by GitHub Actions to ensure:
+* Your JSON file is properly formatted
+* The `public_key` is exactly 64 hex characters (valid Ed25519 public key)
+* The `exclusivity_address` is a valid Ethereum address (0x + 40 hex characters)
+* All addresses in `exclusivity_addresses` are valid for their respective chains
+* The `active` field is a boolean (true or false)
+
+If validation fails, the PR will show an error and you'll need to fix your file before it can be
+merged.
+
+### Step 3: Wait for review and merge
+
+Once your PR passes validation, a maintainer will review your registration. After approval and
+merge:
+
+1. Your registration will be **automatically synced to the registration database** (typically within
+   a few minutes via GitHub webhook)
+2. You will be able to **authenticate with the Configuration API** using your private key to submit
+   your pricing and balance information
+3. Your relayer will be **eligible for nomination** once you've submitted a valid configuration to
+   the Configuration API
+
+
+## Instructions for generating a public key
 
 Your Ed25519 keypair consists of a private key (keep this secret!) and a public key (submit this in
 your registration). Ed25519 is a digital signature algorithm—you will use your private key to sign
@@ -50,7 +86,7 @@ requests, and the server will verify the signature using your registered public 
 
 Below are examples for generating a keypair in various languages and via command line.
 
-#### Command Line (using OpenSSL)
+### Command Line (using OpenSSL)
 
 Generate a keypair and extract the public key in hex format:
 
@@ -73,7 +109,7 @@ echo "Private Key: $(openssl pkey -in private_key.pem -text -noout 2>/dev/null |
 echo "Public Key: $(openssl pkey -in private_key.pem -pubout -outform DER | tail -c 32 | xxd -p -c 32)"
 ```
 
-#### TypeScript
+### TypeScript
 
 Install the `tweetnacl` package:
 
@@ -96,7 +132,7 @@ console.log('Public Key (submit this):', publicKeyHex);
 console.log('Private Key (keep secret!):', privateKeyHex);
 ```
 
-#### Python
+### Python
 
 Install the `PyNaCl` package:
 
@@ -119,7 +155,7 @@ print(f"Public Key (submit this): {public_key_hex}")
 print(f"Private Key (keep secret!): {private_key_hex}")
 ```
 
-#### Rust
+### Rust
 
 Add the following to your `Cargo.toml`:
 
