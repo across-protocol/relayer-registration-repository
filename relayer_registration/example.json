@@ -1,0 +1,9 @@
+{
+  "public_key": "c3e1d9fd756ee7bd8c50d416c1f4aec8d47f49b88ede147769f90dad45de0d68",
+  "exclusivity_address": "0x07aE8551Be970cB1cCa11Dd7a11F47Ae82e70E67",
+  "exclusivity_addresses": {
+    999: "0xfc0a7211882391717cEdF446889Af99Ca4168093",
+    34268394551451: "FmMK62wrtWVb5SVoTZftSCGw3nEDA79hDbZNTRnC1R6t"
+  },
+  "active": false
+}
