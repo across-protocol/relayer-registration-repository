@@ -24,10 +24,15 @@ The file should have the following keys:
 * `public_key`: A hex-encoded Ed25519 public key (64 characters) used to authenticate requests from
   your relayer. You will sign configuration updates with the corresponding private key to prove
   ownership.
-* `exclusivity_address`: This is the default address that exclusivity is assigned to on EVM chains.
-* `exclusivity_addresses`: This allows you to override the address that is assigned exclusivity both
-  on EVM chains and allows you to give a non-EVM address.
-* `active`: This is a boolean that simply denotes whether or not your relayer is currently active.
+* `exclusivity_address`: This is the default address that exclusivity is assigned to. Used as
+  fallback for any chain not specified in `exclusivity_addresses`.
+* `exclusivity_addresses`: This allows you to override the exclusivity address on a per-chain basis.
+  The key is the chain ID (as a string), and the value is the address for that chain. This supports
+  both EVM addresses and non-EVM addresses (e.g., Solana). When you are nominated for a transfer,
+  the system will use the chain-specific address if provided, otherwise it falls back to
+  `exclusivity_address`.
+* `active`: This is a boolean that denotes whether your relayer is currently active and eligible for
+  nomination.
 
 Here is an example of what the file should look like
 
@@ -69,7 +74,7 @@ Once your PR passes validation, a maintainer will review your registration. Afte
 merge:
 
 1. Your registration will be **automatically synced to the registration database** (typically within
-   a few minutes via GitHub webhook)
+   1 second via GitHub webhook)
 2. You will be able to **authenticate with the Configuration API** using your private key to submit
    your pricing and balance information
 3. Your relayer will be **eligible for nomination** once you've submitted a valid configuration to
@@ -220,20 +225,29 @@ bundles with multiple exchange rates or one at a time.
 
 ### Authentication
 
-All endpoints are protected by authentication to ensure that a relayers configuration can only be
-read by or written to by the relayer themself.
+**All endpoints require the `X-Relayer-Id` header** to identify which relayer's configuration to
+access.
 
-The relayers public key is stored publicly in the relayer registration repository referenced above
-and relayers must keep their private key secret or non-authorized, and potentially malicious,
-individuals will be able to read or write to your configuration.
+**Authenticated endpoints** (all except `/api/checkLive`) additionally require signature
+verification to ensure that a relayer's configuration can only be read or written by the relayer
+themself.
 
-Relayers should always submit the following headers used for authentication:
+The relayer's public key is stored publicly in the relayer registration repository and relayers
+must keep their private key secret, or non-authorized individuals will be able to read or write to
+your configuration.
+
+**Required headers for authenticated endpoints:**
 
 ```
 X-Relayer-Id: <String used to identify your configuration file>
 X-Timestamp: <Unix timestamp (ms) when you submitted -- Will error if older than 5 minutes>
 X-Signature: <hex-encoded-64-byte-signature>
 ```
+
+**For `/api/checkLive`**: Only `X-Relayer-Id` is required (no signature verification).
+
+**Authorization**: Relayers can only access their own configuration. You cannot read or modify
+another relayer's configuration, but you can check if any relayer is active via `/api/checkLive`.
 
 The `X-Signature` is created by building a specific message. This message is defined as:
 
@@ -286,11 +300,12 @@ X can be computed from the bid and asks:
 
 ### Endpoints
 
-There are several key endpoints in the API. Note that you do not have to pass any parameters to
-these endpoints, the `relayerId` must be included in your header.
+There are several key endpoints in the API. All endpoints use header-based identification (no query
+parameters). The `X-Relayer-Id` header is required for all endpoints.
 
-If an endpoint is unauthenticated, you can still include the headers but all of the headers except
-for the `relayerId` will be diregarded.
+For authenticated endpoints, you must also include `X-Timestamp` and `X-Signature` headers. For
+`/api/checkLive`, only `X-Relayer-Id` is required - signature headers are optional and will be
+ignored if provided.
 
 * `api/checkLive` (`GET`, unauthenticated): Responds with whether a relayer is currently
   active (based on whether their configuration is set `active: true` or `active: false`).
