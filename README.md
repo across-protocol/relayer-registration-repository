@@ -8,6 +8,7 @@ This registration comes with no guarantees that your relayer will be assigned no
 and, by submitting a configuration here, you agree that all assignments are at the sole discretion
 of Risk Labs.
 
+
 ## Submitting a configuration
 
 ### Step 1: Create your registration file
@@ -75,6 +76,241 @@ merge:
    the Configuration API
 
 
+## Updating your real-time configuration
+
+Once the pull request to add your relayer's address to this repository is added, you must interact
+with the real-time configuration API which allows you to specify information that allows us to
+assign deposits that fit your desired criteria.
+
+### Configurations
+
+Relayers are expected to submit several relevant objects:
+
+#### `tokens`
+
+The `tokens` object contains information about which tokens a relayer considers equivalent and
+plans to price the same.
+
+It has the following structure:
+
+```
+{
+  "eth": [
+    { "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "chainId": 1, "decimals": 18 },
+    { "address": "0x4200000000000000000000000000000000000006", "chainId": 8453, "decimals": 18 }
+  ],
+  "stable": [
+    { "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "chainId": 1, "decimals": 6 },
+    { "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "chainId": 1, "decimals": 6 },
+    { "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", "chainId": 8453, "decimals": 6 },
+    { "address": "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", "chainId": 8453, "decimals": 6 }
+  ]
+}
+```
+
+#### `balances`
+
+The `balances` object contains information about the available funds for each relayer that they
+can use for fulfilling orders.
+
+Relayers are expected to keep this information accurate and up-to-date. Balances are represented
+as strings to support large integer values (BigInt) and should be reported in wei.
+
+```
+{
+  "1": {
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": "10000000000000000000",
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": "1000000000"
+  },
+  "8453": {
+    "0x4200000000000000000000000000000000000006": "5000000000000000000",
+    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": "500000000"
+  }
+}
+```
+
+#### `orderbook`
+
+The `orderbook` object contains information about the bid-ask for each token that the relayer
+supports bridging for. This allows the relayer to specify how much they value a token on certain
+chains relative to others.
+
+The key of this object is the string used to represent token groups in the `token` object and a
+relayer basically specifies a sequence of bids/asks for each chain (these are interpreted
+cumulatively).
+
+See example structure below:
+
+```
+{
+  "eth": {
+    "bid": {
+      "1": [
+        { "amount": 3, "price": 0.999 },
+        { "amount": 7, "price": 0.99 },
+        { "amount": 5, "price": 0.98 }
+      ],
+      "8453": [
+        { "amount": 3, "price": 0.999 },
+        { "amount": 7, "price": 0.99 },
+        { "amount": 5, "price": 0.98 }
+      ]
+    },
+    "ask": {
+      "1": [
+        { "amount": 5, "price": 1.001 },
+        { "amount": 10, "price": 1.01 }
+      ],
+      "8453": [
+        { "amount": 2, "price": 1.001 },
+        { "amount": 7, "price": 1.01 },
+        { "amount": 6, "price": 1.02 }
+      ]
+    }
+  },
+  "stable": {
+    "bid": {
+      "1": [
+        { "amount": 500, "price": 0.9995 },
+        { "amount": 1000, "price": 0.999 }
+      ]
+    },
+    "ask": {
+      "1": [
+        { "amount": 500, "price": 1.001 },
+        { "amount": 500, "price": 1.005 },
+        { "amount": 500, "price": 1.01 }
+      ],
+      "8453": [
+        { "amount": 1000, "price": 1.001 },
+        { "amount": 1000, "price": 1.005 }
+      ]
+    }
+  }
+}
+```
+
+#### `exchangerate`
+
+The exchange rate key allows relayers to specify an exchange rate between the different groups
+defined in the `tokens` object.
+
+There is an implicit 1:1 exchange rate for anything within the `tokens` group -- i.e. if USDC on
+Base and USDT on Ethereum are in the same group then we only determine the price between those two
+from the `pricing` object since we assume a 1:1 exchange rate.
+
+Each exchange rate should have an expiration expressed as a unix timestamp. The maximum validity
+of this expiration should be 1 hour and the minimum validity should be 10 seconds. If you
+deliver values outside of this range then it will be rejected.
+
+The exchange rate will be assumed to be valid until it is either replaced by a new value OR
+reaches the expiration timestamp. This means that you can submit exchange rate information in
+bundles with multiple exchange rates or one at a time.
+
+```
+{
+  "eth": {
+    "stable": { "numerator": 1, "denominator": 3150, "expiration": 1767900109 }
+  },
+  "stable": {
+    "eth": { "numerator": 3200, "denominator": 1, "expiration": 1767900469 }
+  }
+}
+```
+
+### Authentication
+
+All endpoints are protected by authentication to ensure that a relayers configuration can only be
+read by or written to by the relayer themself.
+
+The relayers public key is stored publicly in the relayer registration repository referenced above
+and relayers must keep their private key secret or non-authorized, and potentially malicious,
+individuals will be able to read or write to your configuration.
+
+Relayers should always submit the following headers used for authentication:
+
+```
+X-Relayer-Id: <String used to identify your configuration file>
+X-Timestamp: <Unix timestamp (ms) when you submitted -- Will error if older than 5 minutes>
+X-Signature: <hex-encoded-64-byte-signature>
+```
+
+The `X-Signature` is created by building a specific message. This message is defined as:
+
+```
+message = timestamp + "\n" + HTTP method + "\n" + API endpoint + "\n" + body_hash
+```
+
+You can then take this message and sign it with your ED25519 private key. The server will then
+lookup the relevant public key using `X-Relayer-Id` and reconstruct the message and verify that the
+signature is valid with the relayers public key.
+
+You can find instructions below for how to construct such a key.
+
+### Pricing examples
+
+These two pricing examples assume that an input amount is specified but we can go in the reverse
+order of calculations if an output amount is specified
+
+#### Example 1: ETH-ETH
+
+Suppose a user was transferring 10 WETH from Ethereum to Base and that relayer `0x1` had a
+configuration identical to the examples from [the objects section](objects). Then `0x1` would
+demand 9.87273 WETH as an output for the input of 10 WETH.
+
+9.87273 can be computed from the bid and asks:
+
+* The relayer would take the first 3 WETH on Ethereum at 0.999 and the next 7 at 0.99 which
+  results in a bid fee of `(3*(1 - 0.999) + 7*(1 - 0.99)) = 0.073` ETH
+* The relayer would then be willing to provide the first 5 WETH on Base at price of 1.001 and the
+  next 4.927 at 1.01 for a fee of `(5*(1.001 - 1) + 4.927*(1.01 - 1)) = 0.05427`
+
+This gives the total fee of 0.12727.
+
+#### Example 2: STABLE-ETH
+
+Suppose a user was transferring 1,500 USDC from Ethereum to Base ETH and that relayer `0x1` had
+a configuration identical to the examples from [the objects section](objects). Then `0x1` would
+demand 0.467891015625 as an output for the input of 1,500 USDC.
+
+X can be computed from the bid and asks:
+
+* The relayer would take the first 500 on Ethereum at 0.9995 and the next 1,000 at 0.999 which
+  results in a bid fee of `(500*(1 - 0.9995) + 1000*(1 - 0.999)) = 1.25` USDC
+* A total of `1,498.75` USDC would then be exchanged to 0.468359375 ETH according to the
+  `stable->eth` exchange (`3200/1 * 1/1498.75`)
+* The relayer would be willing to provide the entire amount at a price of 1.001 which leads to
+  a fee of `(0.468359375*(1.001 - 1)) = 0.000468359375`
+* The output amount would then be 0.467891015625 (`0.468359375 - 0.000468359375`)
+
+
+### Endpoints
+
+There are several key endpoints in the API. Note that you do not have to pass any parameters to
+these endpoints, the `relayerId` must be included in your header.
+
+If an endpoint is unauthenticated, you can still include the headers but all of the headers except
+for the `relayerId` will be diregarded.
+
+* `api/checkLive` (`GET`, unauthenticated): Responds with whether a relayer is currently
+  active (based on whether their configuration is set `active: true` or `active: false`).
+* `api/getConfiguration` (`GET`, authenticated): Fetches a relayer's full configuration
+* `api/getBalance` (`GET`, authenticated): Fetches a relayer's current balance data
+* `api/updateBalance` (`POST`, authenticated): Allows a relayer to update their token balances. Data
+  goes stale after 30 minutes.
+* `api/getExchangeRate` (`GET`, authenticated): Fetches a relayer's current exchange rates and
+  expiry information
+* `api/updateExchangeRate` (`POST`, authenticated): Allows a relayer to update their posted exchange
+  rates and set expiries -- A new exchange rate should deprecate any previously set exchange rates
+  but we recommend using a short expiration window (<30 seconds) to ensure prices expire quickly
+* `api/getOrderBook` (`GET`, authenticated): Fetches a relayer's current orderbook information
+* `api/updateOrderBook` (`POST`, authenticated): Allows a relayer to update their order book
+  information
+* `api/getToken` (`GET`, authenticated): Fetches a relayer's current token configuration
+* `api/updateToken` (`POST`, authenticated): Allows a relayer to update their token lists. Data
+  persists indefinitely.
+
+
 ## Instructions for generating a public key
 
 Your Ed25519 keypair consists of a private key (keep this secret!) and a public key (submit this in
@@ -84,7 +320,7 @@ requests, and the server will verify the signature using your registered public 
 > **⚠️ Important**: Store your private key securely. You will need it to sign configuration updates
   sent to the configuration endpoint. _Never share your private key or commit it to version control._
 
-Below are examples for generating a keypair in various languages and via command line.
+Below are some examples for generating a keypair in various languages and via command line.
 
 ### Command Line (using OpenSSL)
 
